@@ -1,0 +1,55 @@
+﻿@rendermode InteractiveServer
+@page "/product/{Id:guid}"
+@inject IProductService ProductService
+@inject ICartService CartService
+@inject NavigationManager Nav
+
+
+<h3>Детали товара</h3>
+
+
+@if (Product == null)
+{
+	<p>Загрузка...</p>
+}
+else
+{
+	<div class="card">
+		<img src="@(string.IsNullOrEmpty(Product.ImagePath) ? "/images/placeholder.png" : Product.ImagePath)" alt="@Product.Name" class="product-image-large" />
+		<div class="card-body">
+			<h4>@Product.Name</h4>
+			<p>@Product.Description</p>
+			<p><strong>@Product.Price.ToString("C")</strong></p>
+			<p>В наличии: @Product.Stock</p>
+
+
+			<div class="input-group mb-3" style="max-width:160px">
+				<input type="number" class="form-control" min="1" @bind="Quantity" />
+				<button class="btn btn-primary" @onclick="Add">Добавить</button>
+			</div>
+		</div>
+	</div>
+}
+
+
+@code {
+	[Parameter] public Guid Id { get; set; }
+	private Product? Product;
+	private int Quantity = 1;
+
+
+	protected override async Task OnInitializedAsync()
+	{
+		Product = await ProductService.GetAsync(Id);
+	}
+
+
+	private void Add()
+	{
+		if (Product == null) return;
+		
+		CartService.AddToCart(Product.Id, Product.Name, Product.Price, Quantity);
+		
+		Nav.NavigateTo("/cart");
+	}
+}

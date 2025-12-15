@@ -1,0 +1,247 @@
+﻿@page "/admin/categories"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.JSInterop
+@using OdezdaShopServerApp.VerticalSlices.Dto
+@using OdezdaShopServerApp.VerticalSlices
+@attribute [Authorize(Roles = "Admin")]
+
+@rendermode InteractiveServer
+
+@inject ICategoryService CategoryService
+@inject IJSRuntime JS
+
+<h3 class="page-title">Управление категориями</h3>
+
+<div class="card page-card">
+    <div class="card-body">
+        <div class="create-row">
+            <EditForm Model="@createModel" OnValidSubmit="Create" FormName="createCategoryForm" class="d-flex create-form">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+                <InputText @bind-Value="createModel.Name" class="form-control me-2" placeholder="Новая категория" />
+                <button class="btn btn-primary" type="submit">Создать</button>
+            </EditForm>
+        </div>
+
+        @if (isLoading)
+        {
+            <div class="loader">Загрузка...</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover categories-table">
+                    <thead>
+                        <tr>
+                            <th>Название</th>
+                            <th style="width:120px">Товаров</th>
+                            <th style="width:220px">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in categories)
+                        {
+                            var id = c.Id;
+                            var editFormName = $"editForm-{id}";
+                            <tr>
+                                <td class="align-middle">
+                                    @if (editId == c.Id)
+                                    {
+                                        <EditForm Model="@editModel" OnValidSubmit="@(() => SaveEdit(id))" FormName="@editFormName" class="d-inline-block w-100">
+                                            <DataAnnotationsValidator />
+                                            <ValidationSummary />
+                                            <InputText @bind-Value="editModel.Name" class="form-control form-control-sm" />
+                                        </EditForm>
+                                    }
+                                    else
+                                    {
+                                        <span class="category-name">@c.Name</span>
+                                    }
+                                </td>
+                                <td class="align-middle">@c.ProductCount</td>
+                                <td class="align-middle">
+                                    @if (editId == c.Id)
+                                    {
+                                        <button class="btn btn-sm btn-success me-2" @onclick="() => SaveEdit(id)">Сохранить</button>
+                                        <button class="btn btn-sm btn-secondary" @onclick="CancelEdit">Отмена</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-sm btn-outline-primary me-2" @onclick="() => BeginEdit(c)">Изменить</button>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => Delete(id)">Удалить</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .page-title {
+        margin-bottom: 1rem;
+        font-weight: 600;
+    }
+
+    .page-card {
+        max-width: 960px;
+        margin: 0 auto 2rem auto;
+        box-shadow: 0 6px 24px rgba(15, 23, 42, 0.06);
+        border: 1px solid rgba(0,0,0,0.04);
+        border-radius: 8px;
+    }
+
+    .create-row {
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+    }
+
+    .create-form .form-control {
+        max-width: 420px;
+        min-width: 220px;
+    }
+
+    .categories-table th {
+        background: #fafafa;
+        vertical-align: middle;
+    }
+
+    .categories-table td {
+        vertical-align: middle;
+    }
+
+    .category-name {
+        display: inline-block;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .loader {
+        padding: 1rem 0;
+        text-align: center;
+        color: #666;
+    }
+
+    /* кнопки */
+    .btn-outline-primary {
+        border-color: #1976d2;
+        color: #1976d2;
+        background: transparent;
+    }
+
+    .btn-outline-danger {
+        border-color: #dc3545;
+        color: #dc3545;
+        background: transparent;
+    }
+
+    /* адаптив */
+    @@media (max-width: 576px) {
+        .create-form
+
+    {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .create-form .form-control {
+        width: 100%;
+    }
+
+    }
+</style>
+
+@code {
+    private List<CategoryDto> categories = new();
+    private bool isLoading = true;
+
+    private CategoryCreateDto createModel = new();
+    private Guid? editId;
+    private CategoryUpdateDto editModel = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        isLoading = true;
+        try
+        {
+            var list = await CategoryService.GetAllAsync();
+            categories = list.ToList();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+        StateHasChanged();
+    }
+
+    private async Task Create()
+    {
+        try
+        {
+            await CategoryService.CreateAsync(createModel);
+            createModel = new CategoryCreateDto();
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(ex);
+            // можно показывать toast/alert
+        }
+    }
+
+    private void BeginEdit(CategoryDto c)
+    {
+        editId = c.Id;
+        editModel = new CategoryUpdateDto { Name = c.Name };
+    }
+
+    private void CancelEdit()
+    {
+        editId = null;
+        editModel = new CategoryUpdateDto();
+    }
+
+    private async Task SaveEdit(Guid id)
+    {
+        if (string.IsNullOrWhiteSpace(editModel.Name)) return;
+
+        try
+        {
+            await CategoryService.UpdateAsync(id, editModel);
+            editId = null;
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(ex);
+        }
+    }
+
+    private async Task Delete(Guid id)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "Удалить категорию?");
+        if (!confirmed) return;
+
+        try
+        {
+            await CategoryService.DeleteAsync(id);
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(ex);
+            // обработка ошибки (например, нельзя удалить если есть товары)
+        }
+    }
+}

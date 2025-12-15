@@ -1,0 +1,61 @@
+﻿@rendermode InteractiveServer
+@page "/checkout"
+@inject ICartService CartService
+@inject IOrderService OrderService
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
+
+
+<h3>Оформление</h3>
+
+
+@if (_cart == null || !_cart.Items.Any())
+{
+	<p>Корзина пуста.</p>
+}
+else
+{
+	<EditForm Model="CheckoutModel" OnValidSubmit="Submit">
+		<div class="mb-3">
+			<label>Адрес доставки</label>
+			<InputText class="form-control" @bind-Value="CheckoutModel.ShippingAddress" />
+		</div>
+		<div class="mb-3">
+			<label>Email</label>
+			<InputText class="form-control" @bind-Value="CheckoutModel.Email" />
+		</div>
+		<div class="mb-3">
+			<strong>Итого: @_cart.Total.ToString("C")</strong>
+		</div>
+		<button class="btn btn-primary" type="submit">Подтвердить</button>
+	</EditForm>
+}
+
+
+@code {
+	private OdezdaShopServerApp.Core.Entities.Carts.Cart? _cart;
+	private CheckoutDto CheckoutModel = new();
+
+
+	protected override void OnInitialized()
+	{
+		_cart = CartService.GetCart();
+	}
+
+
+	private async Task Submit()
+	{
+		var auth = await AuthState.GetAuthenticationStateAsync();
+		var user = auth.User;
+		string? userId = user?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+
+		var items = _cart!.Items.Select(i => (i.ProductId, i.Quantity)).ToArray();
+		var order = await OrderService.PlaceOrderAsync(items, userId, CheckoutModel.ShippingAddress, CheckoutModel.Email);
+		CartService.ClearCart();
+		Nav.NavigateTo($"/order-confirmation/{order.Id}");
+	}
+
+
+	public class CheckoutDto { public string? ShippingAddress { get; set; } public string? Email { get; set; } }
+}

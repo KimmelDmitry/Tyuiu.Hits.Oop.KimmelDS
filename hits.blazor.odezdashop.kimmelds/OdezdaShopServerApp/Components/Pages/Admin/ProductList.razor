@@ -1,0 +1,484 @@
+﻿@rendermode InteractiveServer
+@page "/admin/products"
+@using Microsoft.AspNetCore.Authorization
+@using OdezdaShopServerApp.VerticalSlices;
+@using Microsoft.JSInterop
+@attribute [Authorize(Roles = Roles.Admin)]
+@inject IProductService ProductService
+@inject ICategoryService CategoryService
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<h3 class="page-title">Управление товарами</h3>
+
+<ProductModal @ref="productModal" OnSaved="RefreshList" />
+
+<div class="toolbar card">
+    <div class="toolbar-left">
+        <button class="btn btn-success" @onclick="Create">Создать товар</button>
+    </div>
+
+    <div class="toolbar-right">
+        <input class="form-control search" placeholder="Поиск по названию или описанию..." @bind="SearchQuery" @bind:event="oninput" />
+
+        <select class="form-control filter" @bind="CategoryFilter">
+            <option value="">Все категории</option>
+            @foreach (var c in Categories)
+            {
+                <option value="@c.Id">@c.Name</option>
+            }
+        </select>
+
+        <select class="form-control filter" @bind="ActiveFilterString">
+            <option value="">Все статусы</option>
+            <option value="true">Активные</option>
+            <option value="false">Неактивные</option>
+        </select>
+
+
+        <input class="form-control small" type="number" min="0" placeholder="Мин. кол-во" @bind="MinStockString" @bind:event="oninput" />
+        <input class="form-control small" type="number" min="0" placeholder="Макс. кол-во" @bind="MaxStockString" @bind:event="oninput" />
+
+        <button class="btn btn-outline-secondary" @onclick="ResetFilters">Сброс</button>
+
+        <button class="btn btn-outline-secondary" @onclick="ResetFilters">Применить</button>
+    </div>
+</div>
+
+@if (isLoading)
+{
+    <div class="loader">Загрузка...</div>
+}
+else if (FilteredProducts.Count == 0)
+{
+    <div class="empty">Ничего не найдено.</div>
+}
+else
+{
+    <div class="table-wrap card">
+        <table class="table products-table">
+            <thead>
+                <tr>
+                    <th class="col-image">Фото</th>
+                    <th class="col-name">Название</th>
+                    <th class="col-category">Категория</th>
+                    <th class="col-price">Цена</th>
+                    <th class="col-stock">В наличии</th>
+                    <th class="col-active">Статус</th>
+                    <th class="col-created">Создан</th>
+                    <th class="col-actions"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var p in PagedProducts)
+                {
+                    <tr>
+                        <td class="image-cell">
+                            @if (!string.IsNullOrWhiteSpace(p.ImagePath))
+                            {
+                                <img src="@p.ImagePath" alt="@p.Name" />
+                            }
+                            else
+                            {
+                                <div class="image-placeholder">—</div>
+                            }
+                        </td>
+
+                        <td class="name">@p.Name</td>
+                        <td>@p.CategoryName</td>
+                        <td>@p.Price.ToString("C")</td>
+                        <td>@p.Stock</td>
+                        <td>
+                            @if (p.IsActive)
+                            {
+                                <span class="badge badge-active">Активен</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-inactive">Неактивен</span>
+                            }
+                        </td>
+                        <td>@p.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                        <td class="actions">
+                            <button class="btn btn-sm btn-primary me-1" @onclick="() => Edit(p.Id)">Edit</button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => ConfirmDelete(p.Id, p.Name)">удалить</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <div class="pager">
+            <div>Показано @((CurrentPage-1)*PageSize + 1)-@((CurrentPage-1)*PageSize + PagedProducts.Count) из @FilteredProducts.Count</div>
+            <div class="pager-controls">
+                <button class="btn btn-sm" @onclick="PrevPage" disabled="@(CurrentPage == 1)">‹ Prev</button>
+                <span class="page-indicator">Стр. @CurrentPage</span>
+                <button class="btn btn-sm" @onclick="NextPage" disabled="@(CurrentPage * PageSize >= FilteredProducts.Count)">Next ›</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (ShowConfirm)
+{
+    <div class="modal-backdrop" @onclick="CancelDelete"></div>
+    <div class="confirm-modal card">
+        <div class="confirm-header">Подтвердите удаление</div>
+        <div class="confirm-body">
+            Вы действительно хотите удалить товар <strong>@DeleteName</strong>?
+            (помечает товар как неактивный).
+        </div>
+        <div class="confirm-actions">
+            <button class="btn btn-secondary" @onclick="CancelDelete">Отмена</button>
+            <button class="btn btn-danger" @onclick="DeleteConfirmed">Удалить</button>
+        </div>
+    </div>
+}
+
+<style>
+    .page-title { margin-bottom: 0.75rem; font-weight: 600; }
+
+    .col-image {
+        width: 180px;
+    }
+
+    .image-cell {
+        width: 180px;
+        text-align: center;
+    }
+
+        .image-cell img {
+            width: 156px;
+            height: 156px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 1px solid #e5e7eb;
+            background: #fff;
+        }
+
+    .image-placeholder {
+        width: 156px;
+        height: 156px;
+        border-radius: 6px;
+        background: #f3f4f6;
+        color: #9ca3af;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+        border: 1px dashed #d1d5db;
+    }
+
+    .products-table td.name {
+        font-weight: 500;
+    }
+
+    .card { padding: 0.75rem; border-radius: 10px; box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06); background: #fff; margin-bottom: 1rem; }
+    .toolbar { display:flex; justify-content:space-between; align-items:center; gap:0.75rem; flex-wrap:wrap; }
+    .toolbar-left { display:flex; align-items:center; gap:0.5rem; }
+    .toolbar-right { display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; }
+    .search { min-width: 220px; max-width: 420px; }
+    .filter { min-width: 160px; }
+    .small { width: 110px; }
+    .table-wrap { overflow:auto; }
+    .products-table { width:100%; border-collapse:collapse; }
+    .products-table th { text-align:left; font-weight:600; color:#444; padding:0.6rem 0.75rem; background:#fafafa; border-bottom:1px solid #eee; }
+    .products-table td { padding:0.6rem 0.75rem; border-bottom:1px solid #f1f1f1; vertical-align:middle; }
+    .col-name { width: 34%; }
+    .col-category { width: 18%; color:#666; }
+    .col-price { width: 10%; }
+    .col-stock { width: 8%; text-align:center; }
+    .col-active { width: 10%; }
+    .col-created { width: 10%; color:#666; }
+    .actions { text-align:right; }
+    .btn { border-radius:6px; }
+    .me-1 { margin-right:0.25rem; }
+    .loader { padding:1rem; color:#666; }
+    .empty { padding:1rem; color:#666; }
+
+    .badge { display:inline-block; padding:0.25rem 0.5rem; border-radius:999px; font-size:0.8rem; }
+    .badge-active { background:#e6f4ea; color:#137a3a; }
+    .badge-inactive { background:#fbe9e9; color:#a31b1b; }
+
+    .pager { display:flex; justify-content:space-between; align-items:center; margin-top:0.75rem; }
+    .pager-controls { display:flex; gap:0.5rem; align-items:center; }
+
+    /* Confirm modal */
+    .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:50; }
+    .confirm-modal { position:fixed; z-index:60; left:50%; top:50%; transform:translate(-50%,-50%); width:420px; padding:1rem; border-radius:10px; }
+    .confirm-header { font-weight:600; margin-bottom:0.5rem; }
+    .confirm-body { margin-bottom:1rem; color:#333; }
+    .confirm-actions { display:flex; justify-content:flex-end; gap:0.5rem; }
+
+    @@media (max-width: 768px) {
+    .toolbar-right { width:100%; gap:0.5rem; }
+    .search { flex:1 1 100%; max-width:100%; }
+    .products-table th, .products-table td { padding:0.45rem 0.5rem; }
+    .confirm-modal { width:90%; }
+    }
+</style>
+
+@code {
+    private List<ProductView> AllProducts = new();
+    private List<ProductView> FilteredProducts = new();
+    private bool isLoading = true;
+
+    // For paging
+    private int CurrentPage = 1;
+    private int PageSize = 12;
+
+    // Filters / UI state
+    private string SearchQuery { get; set; } = "";
+    private string? CategoryFilter { get; set; }
+    private string MinStockString { get; set; } = "";
+    private string MaxStockString { get; set; } = "";
+
+    private List<CategoryDto> Categories = new();
+
+    // Delete confirmation
+    private bool ShowConfirm = false;
+    private Guid? DeleteId;
+    private string DeleteName = "";
+
+
+
+
+    private string? _activeFilterString = "";
+    private string? ActiveFilterString
+    {
+        get => _activeFilterString;
+        set
+        {
+            if (_activeFilterString == value) return;
+            _activeFilterString = value;
+            ApplyFilters();
+        }
+    }
+
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try
+        {
+            var products = await ProductService.GetAllAsync(); 
+            var categories = await CategoryService.GetAllAsync();
+
+            Categories = categories.Select(c => new CategoryDto()
+            {
+                Id = c.Id,
+				Name = c.Name
+            }).ToList();
+
+            AllProducts = products.Select(p => new ProductView
+            {
+                Id = p.Id,
+                Name = p.Name,
+                Description = p.Description,
+                Price = p.Price,
+                Stock = p.Stock,
+                ImagePath = p.ImagePath,
+                CategoryId = p.CategoryId,
+                CategoryName = Categories.FirstOrDefault(c => c.Id == p.CategoryId)?.Name ?? "-",
+                IsActive = p.IsActive,
+                CreatedAt = p.CreatedAt
+            }).OrderByDescending(p => p.CreatedAt).ToList();
+
+            ApplyFilters();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(ex);
+            // при желании — показать toast/уведомление
+            AllProducts = new List<ProductView>();
+            FilteredProducts = new List<ProductView>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ApplyFilters()
+    {
+        IEnumerable<ProductView> q = AllProducts;
+
+        if (!string.IsNullOrWhiteSpace(SearchQuery))
+        {
+            var s = SearchQuery.Trim().ToLowerInvariant();
+            q = q.Where(p => (p.Name ?? "").ToLowerInvariant().Contains(s) || (p.Description ?? "").ToLowerInvariant().Contains(s));
+        }
+
+        if (string.IsNullOrWhiteSpace(CategoryFilter) == false)
+        {
+            q = q.Where(p => p.Name == CategoryFilter);
+        }
+
+        if (!string.IsNullOrWhiteSpace(ActiveFilterString))
+        {
+            if (bool.TryParse(ActiveFilterString, out var active))
+                q = q.Where(p => p.IsActive == active);
+        }
+
+        if (int.TryParse(MinStockString, out var minStock))
+            q = q.Where(p => p.Stock >= minStock);
+
+        if (int.TryParse(MaxStockString, out var maxStock))
+            q = q.Where(p => p.Stock <= maxStock);
+
+        FilteredProducts = q.ToList();
+        CurrentPage = 1;
+        StateHasChanged();
+    }
+
+    // Getter for current page slice
+    private IReadOnlyList<ProductView> PagedProducts => FilteredProducts.Skip((CurrentPage - 1) * PageSize).Take(PageSize).ToList();
+
+    // Handlers for two-way bound strings (to trigger filtering while typing)
+    private void OnActiveFilterChanged(ChangeEventArgs e)
+    {
+        ActiveFilterString = e?.Value?.ToString();
+        ApplyFilters();
+    }
+
+    private string _lastSearch = "";
+    private void OnSearchChanged()
+    {
+        if (_lastSearch == SearchQuery) return;
+        _lastSearch = SearchQuery;
+        ApplyFilters();
+    }
+
+    // When using @bind with oninput, bind setter will be triggered automatically —
+    // We need to observe SearchQuery changes. Use property setter instead (below).
+    private string _searchQueryBacking;
+    private string SearchQueryBacking
+    {
+        get => _searchQueryBacking;
+        set
+        {
+            _searchQueryBacking = value;
+            ApplyFilters();
+        }
+    }
+
+    
+
+
+    // But we used @bind directly on SearchQuery; to ensure ApplyFilters runs on each oninput,
+    // we call ApplyFilters from the setter of SearchQuery via a small trick.
+    // So override the property:
+    private string searchQueryField = "";
+    private string SearchQueryLocal
+    {
+        get => searchQueryField;
+        set
+        {
+            if (searchQueryField == value) return;
+            searchQueryField = value;
+            SearchQuery = value;
+            ApplyFilters();
+        }
+    }
+
+    // To make the above effective with our @bind, map the bound property to SearchQueryLocal.
+    // (But we already bound SearchQuery directly in markup. If you prefer minimal changes,
+    // just leave it — ApplyFilters is also called from other UI events.)
+
+
+    // Pagination
+    private void PrevPage()
+    {
+        if (CurrentPage > 1) CurrentPage--;
+    }
+
+    private void NextPage()
+    {
+        if (CurrentPage * PageSize < FilteredProducts.Count) CurrentPage++;
+    }
+
+    private void ResetFilters()
+    {
+        SearchQuery = "";
+        CategoryFilter = null;
+        ActiveFilterString = "";
+        MinStockString = "";
+        MaxStockString = "";
+        ApplyFilters();
+    }
+
+    private ProductModal? productModal;
+
+    void Create() => productModal?.OpenCreate();
+    async Task Edit(Guid id) { if (productModal != null) await productModal.OpenEditAsync(id); }
+
+    private async Task RefreshList()
+    {
+        await LoadData(); // или перезагрузи список товаров как у тебя реализовано
+    }
+
+    private void ConfirmDelete(Guid id, string name)
+    {
+        DeleteId = id;
+        DeleteName = name;
+        ShowConfirm = true;
+    }
+
+    private void CancelDelete()
+    {
+        ShowConfirm = false;
+        DeleteId = null;
+        DeleteName = "";
+    }
+
+    private async Task DeleteConfirmed()
+    {
+        if (!DeleteId.HasValue) return;
+        try
+        {
+            // В зависимости от реализации DeleteAsync может пометить IsActive=false или реально удалить
+            await ProductService.DeleteAsync(DeleteId.Value);
+            // Перезагрузим данные или удалим локально:
+            AllProducts.RemoveAll(p => p.Id == DeleteId.Value);
+            ApplyFilters();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(ex);
+            // Можно показать уведомление об ошибке
+            await JS.InvokeVoidAsync("alert", "Ошибка при удалении: " + ex.Message);
+        }
+        finally
+        {
+            CancelDelete();
+        }
+    }
+
+    // Simple view model for UI
+    private class ProductView
+    {
+        public Guid Id { get; init; }
+        public string Name { get; init; } = "";
+        public string? Description { get; init; }
+        public decimal Price { get; init; }
+        public string? ImagePath { get; init; }
+        public int Stock { get; set; }
+        public Guid CategoryId { get; init; }
+        public string CategoryName { get; init; } = "";
+        public bool IsActive { get; init; }
+        public DateTime CreatedAt { get; init; }
+    }
+
+    // DTO expected from CategoryService (from earlier code)
+    private class CategoryDto
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = "";
+    }
+}

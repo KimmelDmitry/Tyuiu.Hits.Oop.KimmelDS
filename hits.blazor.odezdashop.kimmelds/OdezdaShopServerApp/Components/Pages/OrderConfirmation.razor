@@ -1,0 +1,29 @@
+﻿@rendermode InteractiveServer
+@page "/order-confirmation/{Id:guid}"
+@inject IOrderService OrderService
+
+
+<h3>Заказ оформлен</h3>
+
+
+@if (Order == null)
+{
+	<p>Загрузка...</p>
+}
+else
+{
+	<p>Номер заказа: <strong>@Order.OrderNumber</strong></p>
+	<p>Итог: <strong>@Order.Total.ToString("C")</strong></p>
+}
+
+
+@code {
+	[Parameter] public Guid Id { get; set; }
+	private OdezdaShopServerApp.Core.Entities.Order? Order;
+
+
+	protected override async Task OnInitializedAsync()
+	{
+		Order = await OrderService.GetAsync(Id);
+	}
+}

@@ -1,0 +1,294 @@
+﻿@page "/orders"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using OdezdaShopServerApp.Core.Entities
+@inject OdezdaShopServerApp.Core.Interfaces.Services.IOrderService OrderService
+@inject OdezdaShopServerApp.Core.Interfaces.Services.IProductService ProductService
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
+
+<h3>История заказов</h3>
+
+<div class="orders-toolbar">
+    <input class="form-control search" placeholder="Поиск по номеру заказа или email..." @bind="Search" @bind:event="oninput" />
+    <select class="form-control filter" @bind="StatusFilter">
+        <option value="">Все статусы</option>
+        @foreach (var s in Enum.GetValues<OrderStatus>())
+        {
+            <option value="@s">@s</option>
+        }
+    </select>
+    <button class="btn btn-outline-secondary" @onclick="Refresh">Обновить</button>
+</div>
+
+@if (isLoading)
+{
+    <p>Загрузка...</p>
+}
+else if (FilteredOrders.Count == 0)
+{
+    <p>Заказы не найдены.</p>
+}
+else
+{
+    <table class="table orders-table">
+        <thead>
+            <tr>
+                <th>Номер</th>
+                <th>Дата</th>
+                <th>Статус</th>
+                <th>Позиции</th>
+                <th>Сумма</th>
+                <th>Контакты</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var o in PagedOrders)
+            {
+                <tr class="order-row">
+                    <td>@o.OrderNumber</td>
+                    <td>@o.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                    <td><span class="badge">@o.Status</span></td>
+                    <td>@o.Items.Count</td>
+                    <td>@o.Total.ToString("C")</td>
+                    <td>
+                        <div class="small">@o.Email</div>
+                        <div class="small text-muted">@o.ShippingAddress</div>
+                    </td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-primary" @onclick="() => ToggleDetails(o.Id)">
+                            @(expandedOrderIds.Contains(o.Id) ? "Свернуть" : "Детали")
+                        </button>
+                    </td>
+                </tr>
+
+                @if (expandedOrderIds.Contains(o.Id))
+                {
+                    <tr class="order-details-row">
+                        <td colspan="7">
+                            <div class="order-items">
+                                <table class="table table-sm mb-0">
+                                    <thead>
+                                        <tr><th class="col-image">Фото</th><th>Товар</th><th>Цена</th><th>Кол-во</th><th>Итого</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var it in o.Items)
+                                        {
+                                            var lookup = GetProductLookup(it.ProductId);
+                                            <tr>
+                                                <td class="image-cell">
+                                                    @if (!string.IsNullOrEmpty(lookup?.ImagePath))
+                                                    {
+                                                        <img src="@lookup.ImagePath" alt="@it.ProductName" />
+                                                    }
+                                                    else
+                                                    {
+                                                        <img src="/images/placeholder.png" alt="no image" />
+                                                    }
+                                                </td>
+                                                <td>@it.ProductName</td>
+                                                <td>@it.UnitPrice.ToString("C")</td>
+                                                <td>@it.Quantity</td>
+                                                <td>@it.Total.ToString("C")</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+
+                                <div class="order-meta">
+                                    <div><strong>Итого:</strong> @o.Total.ToString("C")</div>
+                                    <div><strong>Адрес:</strong> @(o.ShippingAddress ?? "-")</div>
+                                    <div><strong>Email:</strong> @(o.Email ?? "-")</div>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+
+    <div class="pager">
+        <button class="btn btn-sm" @onclick="PrevPage" disabled="@(CurrentPage==1)">‹ Prev</button>
+        <span class="mx-2">Стр. @CurrentPage из @TotalPages</span>
+        <button class="btn btn-sm" @onclick="NextPage" disabled="@(CurrentPage>=TotalPages)">Next ›</button>
+    </div>
+}
+
+<style>
+    .orders-toolbar {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+        align-items: center;
+    }
+
+        .orders-toolbar .search {
+            min-width: 280px;
+            max-width: 520px;
+        }
+
+    .orders-table th, .orders-table td {
+        vertical-align: middle;
+        padding: 10px;
+    }
+
+    .col-image, .image-cell {
+        width: 72px;
+        text-align: center;
+    }
+
+        .image-cell img {
+            width: 56px;
+            height: 56px;
+            object-fit: cover;
+            border-radius: 6px;
+        }
+
+    .order-details-row td {
+        background: #fafafa;
+    }
+
+    .order-meta {
+        margin-top: 8px;
+        color: #333;
+    }
+
+    .badge {
+        background: #eef2ff;
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-weight: 600;
+    }
+
+    .pager {
+        margin-top: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+</style>
+
+@code {
+    private List<Order> orders = new();
+    private List<Order> FilteredOrders = new();
+    private bool isLoading = true;
+
+    private string Search { get; set; } = "";
+    private OrderStatus? StatusFilter { get; set; }
+
+    private HashSet<Guid> expandedOrderIds = new();
+
+    // paging
+    private int CurrentPage = 1;
+    private int PageSize = 10;
+    private int TotalPages => (int)Math.Ceiling((double)FilteredOrders.Count / PageSize);
+    private IReadOnlyList<Order> PagedOrders => FilteredOrders.Skip((CurrentPage - 1) * PageSize).Take(PageSize).ToList();
+
+    // product lookup cache for images
+    private readonly Dictionary<Guid, ProductLookup?> productLookup = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadOrdersAsync();
+    }
+
+    private async Task LoadOrdersAsync()
+    {
+        isLoading = true;
+        try
+        {
+            // ожидается, что IOrderService имеет метод GetAllAsync(), если у тебя другое имя - замени
+
+            // определяем текущего пользователя и его роль; если не админ — фильтруем по userId
+            var auth = await AuthState.GetAuthenticationStateAsync();
+            var user = auth.User;
+            var userId = user?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var all = await OrderService.GetUserOrdersAsync(userId);
+            var isAdmin = user?.IsInRole("Admin") ?? false;
+
+            if (!isAdmin && !string.IsNullOrEmpty(userId))
+            {
+                orders = all.Where(o => o.UserId == userId).OrderByDescending(o => o.CreatedAt).ToList();
+            }
+            else
+            {
+                orders = all.OrderByDescending(o => o.CreatedAt).ToList();
+            }
+
+            // preload product lookups for visible orders
+            await PreloadProductLookupsAsync(orders);
+            ApplyFilters();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(ex);
+            orders = new List<Order>();
+            FilteredOrders = new List<Order>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task PreloadProductLookupsAsync(IEnumerable<Order> list)
+    {
+        foreach (var o in list)
+        {
+            foreach (var it in o.Items)
+            {
+                if (!productLookup.ContainsKey(it.ProductId))
+                {
+                    try
+                    {
+                        var p = await ProductService.GetAsync(it.ProductId);
+                        productLookup[it.ProductId] = p == null ? null : new ProductLookup { ImagePath = p.ImagePath };
+                    }
+                    catch
+                    {
+                        productLookup[it.ProductId] = null;
+                    }
+                }
+            }
+        }
+    }
+
+    private ProductLookup? GetProductLookup(Guid productId)
+    {
+        productLookup.TryGetValue(productId, out var v);
+        return v;
+    }
+
+    private void ApplyFilters()
+    {
+        IEnumerable<Order> q = orders;
+
+        if (!string.IsNullOrWhiteSpace(Search))
+        {
+            var s = Search.Trim().ToLowerInvariant();
+            q = q.Where(o => (o.OrderNumber?.ToLowerInvariant().Contains(s) ?? false) ||
+                             (o.Email?.ToLowerInvariant().Contains(s) ?? false));
+        }
+
+        if (StatusFilter.HasValue)
+            q = q.Where(o => o.Status == StatusFilter.Value);
+
+        FilteredOrders = q.ToList();
+        CurrentPage = 1;
+    }
+
+    private void ToggleDetails(Guid id)
+    {
+        if (!expandedOrderIds.Add(id)) expandedOrderIds.Remove(id);
+    }
+
+    private void Refresh() => _ = LoadOrdersAsync();
+
+    private void PrevPage() { if (CurrentPage > 1) CurrentPage--; }
+    private void NextPage() { if (CurrentPage < TotalPages) CurrentPage++; }
+
+    // small helper
+    private class ProductLookup { public string? ImagePath { get; init; } }
+}

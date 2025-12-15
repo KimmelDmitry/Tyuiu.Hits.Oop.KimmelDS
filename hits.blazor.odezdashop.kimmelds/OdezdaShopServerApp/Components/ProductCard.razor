@@ -1,0 +1,119 @@
+﻿@using Microsoft.AspNetCore.Components
+@rendermode InteractiveServer
+@inject ICartService CartService
+
+<style>
+.qty-backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgba(0,0,0,0.4);
+	z-index: 50;
+}
+
+.qty-modal {
+	position: fixed;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	background: #fff;
+	padding: 1rem;
+	border-radius: 8px;
+	width: 280px;
+	z-index: 60;
+	box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+}
+
+.qty-modal h5 {
+	margin-bottom: 0.75rem;
+}
+
+.qty-modal .actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.5rem;
+	margin-top: 0.75rem;
+}
+</style>
+
+
+<div class="card product-card">
+	<img src="@ImageSrc" alt="@Product.Name" class="product-image" />
+	<div class="card-body">
+		<h5>@Product.Name</h5>
+		<p>@(Product.Description ?? "")</p>
+		<div class="d-flex justify-content-between align-items-center">
+			<div>
+				<strong>@(Product.Price.ToString("C"))</strong>
+				<div class="small">В наличии: @Product.Stock</div>
+			</div>
+			<div>
+				<button class="btn btn-primary" @onclick="AddToCart">В корзину</button>
+				@if (ShowQuantityModal)
+				{
+					<div class="qty-backdrop" @onclick="CloseModal"></div>
+
+					<div class="qty-modal">
+						<h5>@Product.Name</h5>
+
+						<label>Количество</label>
+						<input type="number"
+							   class="form-control"
+							   min="1"
+							   max="@Product.Stock"
+							   @bind="Quantity" />
+
+						<div class="actions">
+							<button class="btn btn-secondary" @onclick="CloseModal">Отмена</button>
+							<button class="btn btn-primary" @onclick="ConfirmAdd">Добавить</button>
+						</div>
+					</div>
+				}
+
+			</div>
+		</div>
+	</div>
+</div>
+
+
+@code {
+	[Parameter] public Product Product { get; set; } = default!;
+
+
+	private string ImageSrc => string.IsNullOrEmpty(Product.ImagePath) ? "/images/placeholder.png" : Product.ImagePath;
+
+
+	private void AddToCart()
+	{
+		CartService.AddToCart(Product.Id, Product.Name, Product.Price, 1);
+
+		ShowQuantityModal = true;
+	}
+
+	@inject NavigationManager Nav
+
+	private bool ShowQuantityModal;
+	private int Quantity = 1;
+
+
+	private void CloseModal()
+	{
+		ShowQuantityModal = false;
+	}
+
+	private void ConfirmAdd()
+	{
+		if (Quantity < 1) Quantity = 1;
+		if (Quantity > Product.Stock) Quantity = Product.Stock;
+
+		CartService.AddToCart(
+			Product.Id,
+			Product.Name,
+			Product.Price,
+			Quantity);
+
+		ShowQuantityModal = false;
+
+		Nav.NavigateTo("/cart");
+	}
+
+}

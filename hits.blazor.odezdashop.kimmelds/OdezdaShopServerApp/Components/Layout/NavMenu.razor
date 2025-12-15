@@ -1,0 +1,123 @@
+﻿@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components
+@using OdezdaShopServerApp.Common
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler')?.click()">
+    <nav class="flex-column">
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/" Match="NavLinkMatch.All">
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/products" Match="NavLinkMatch.Prefix">
+                <span class="bi bi-bag-fill-nav-menu" aria-hidden="true"></span> Products
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/cart" Match="NavLinkMatch.Prefix">
+                <span class="bi bi-cart-fill-nav-menu" aria-hidden="true"></span> Cart
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/checkout" Match="NavLinkMatch.Prefix">
+                <span class="bi bi-credit-card-fill-nav-menu" aria-hidden="true"></span> Checkout
+            </NavLink>
+        </div>
+
+        <div class="nav-divider my-2"></div>
+
+        <AuthorizeView>
+            <Authorized>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="/orders" Match="NavLinkMatch.Prefix">
+                        <span class="bi bi-card-checklist-nav-menu" aria-hidden="true"></span> My Orders
+                    </NavLink>
+                </div>
+
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="/account/manage" Match="NavLinkMatch.Prefix">
+                        <span class="bi bi-person-fill-nav-menu" aria-hidden="true"></span>
+                        @context.User.Identity?.Name
+                    </NavLink>
+                </div>
+
+                <div class="nav-item px-3">
+                    <form action="Account/Logout" method="post" class="m-0 p-0">
+                        @* Если у тебя есть компонент AntiforgeryToken в проекте, оставь. Иначе можно убрать. *@
+                        <AntiforgeryToken />
+                        <input type="hidden" name="ReturnUrl" value="@currentUrl" />
+                        <button type="submit" class="btn btn-link nav-link p-0">
+                            <span class="bi bi-box-arrow-right-nav-menu" aria-hidden="true"></span> Logout
+                        </button>
+                    </form>
+                </div>
+            </Authorized>
+            <NotAuthorized>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="/account/register" Match="NavLinkMatch.Prefix">
+                        <span class="bi bi-person-nav-menu" aria-hidden="true"></span> Register
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="/account/login" Match="NavLinkMatch.Prefix">
+                        <span class="bi bi-box-arrow-in-right-nav-menu" aria-hidden="true"></span> Login
+                    </NavLink>
+                </div>
+            </NotAuthorized>
+        </AuthorizeView>
+
+        @* Admin-only links *@
+        <AuthorizeView Roles="@Roles.Admin">
+            <Authorized>
+                <div class="nav-divider my-2"></div>
+
+                <div class="nav-item px-3">
+                    <strong class="text-muted small">Admin</strong>
+                </div>
+
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="/admin/products" Match="NavLinkMatch.Prefix">
+                        <span class="bi bi-tools-nav-menu" aria-hidden="true"></span> Manage Products
+                    </NavLink>
+                </div>
+
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="/admin/products/create" Match="NavLinkMatch.Prefix">
+                        <span class="bi bi-plus-circle-fill-nav-menu" aria-hidden="true"></span> Create Product
+                    </NavLink>
+                </div>
+
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="/admin/categories" Match="NavLinkMatch.Prefix">
+                        <span class="bi bi-tags-fill-nav-menu" aria-hidden="true"></span> Categories
+                    </NavLink>
+                </div>
+
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="/admin/orders" Match="NavLinkMatch.Prefix">
+                        <span class="bi bi-receipt-cutoff-nav-menu" aria-hidden="true"></span> Orders
+                    </NavLink>
+                </div>
+            </Authorized>
+        </AuthorizeView>
+
+    </nav>
+</div>
+
+@code {
+    private string currentUrl = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        // absolute URL — Identity logout handler может принять его. Если нужен относительный путь — используй Navigation.ToBaseRelativePath(Navigation.Uri)
+        currentUrl = Navigation.Uri;
+    }
+}

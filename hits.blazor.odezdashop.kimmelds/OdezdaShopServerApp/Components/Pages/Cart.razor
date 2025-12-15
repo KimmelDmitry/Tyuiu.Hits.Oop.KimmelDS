@@ -1,0 +1,385 @@
+﻿@page "/cart"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@inject OdezdaShopServerApp.Core.Interfaces.Services.ICartService CartService
+@inject OdezdaShopServerApp.Core.Interfaces.Services.IOrderService OrderService
+@inject OdezdaShopServerApp.Core.Interfaces.Services.IProductService ProductService
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@implements IDisposable
+
+<div class="checkout-page">
+    <h3 class="page-title">Корзина и оформление</h3>
+
+    @if (_cart == null || !_cart.Items.Any())
+    {
+        <div class="empty-state card">
+            <p>Ваша корзина пуста.</p>
+            <button class="btn btn-primary" @onclick="GoToShop">Продолжить покупки</button>
+        </div>
+    }
+    else
+    {
+        <div class="checkout-container card">
+            <!-- LEFT: таблица товаров -->
+            <div class="cart-column">
+                <h4>Корзина (@_cart.Items.Count)</h4>
+
+                <table class="cart-table">
+                    <thead>
+                        <tr>
+                            <th class="col-image">Фото</th>
+                            <th class="col-name">Товар</th>
+                            <th class="col-price">Цена</th>
+                            <th class="col-qty">Кол-во</th>
+                            <th class="col-sum">Итого</th>
+                            <th class="col-actions"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _cart.Items)
+                        {
+                            var view = GetViewForItem(item.ProductId);
+                            <tr>
+                                <td class="image-cell">
+                                    @if (!string.IsNullOrEmpty(view?.ImagePath))
+                                    {
+                                        <img src="@view.ImagePath" alt="@item.ProductName" />
+                                    }
+                                    else
+                                    {
+                                        <img src="/images/placeholder.png" alt="no image" />
+                                    }
+                                </td>
+
+                                <td class="name-cell">
+                                    <div class="product-name">@item.ProductName</div>
+                                </td>
+
+                                <td class="price-cell">@item.UnitPrice.ToString("C")</td>
+
+                                <td class="qty-cell">
+                                    <input type="number"
+                                           class="qty-input"
+                                           min="1"
+                                           value="@item.Quantity"
+                                           @onchange="e => OnQuantityChanged(item.ProductId, e)" />
+                                </td>
+
+                                <td class="sum-cell">@item.Total.ToString("C")</td>
+
+                                <td class="actions-cell">
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => Remove(item.ProductId)">Удалить</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+
+                    <tfoot>
+                        <tr>
+                            <td colspan="3"></td>
+                            <td><strong>Итого</strong></td>
+                            <td colspan="2">@_cart.Total.ToString("C")</td>
+                        </tr>
+                    </tfoot>
+                </table>
+
+                <div class="cart-actions">
+                    <button class="btn btn-outline-secondary" @onclick="ContinueShopping">Продолжить покупки</button>
+                    <button class="btn btn-danger" @onclick="ClearCart">Очистить корзину</button>
+                </div>
+            </div>
+
+            <!-- RIGHT: форма реквизитов -->
+            <div class="checkout-column">
+                <div class="summary-card card">
+                    <h5>Итог</h5>
+                    <div class="summary-row"><span>Товары (@_cart.Items.Count)</span><span>@_cart.Total.ToString("C")</span></div>
+                    <div class="summary-row total"><span>К оплате</span><span>@_cart.Total.ToString("C")</span></div>
+                </div>
+
+                <EditForm Model="CheckoutModel" OnValidSubmit="Submit" class="checkout-form">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary />
+
+                    <div class="mb-2">
+                        <label class="form-label">ФИО / Получатель</label>
+                        <InputText class="form-control" @bind-Value="CheckoutModel.Recipient" />
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label">Адрес доставки</label>
+                        <InputText class="form-control" @bind-Value="CheckoutModel.ShippingAddress" />
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label">Email</label>
+                        <InputText class="form-control" @bind-Value="CheckoutModel.Email" />
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label">Телефон</label>
+                        <InputText class="form-control" @bind-Value="CheckoutModel.Phone" />
+                    </div>
+
+                    <div class="actions-row">
+                        <button class="btn btn-primary btn-lg" type="submit">Оформить заказ</button>
+                    </div>
+                </EditForm>
+
+                <div class="help-block">
+                    <p>После оформления появится подтверждение покупки.</p>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<!-- Congratulations modal -->
+@if (ShowCongrats)
+{
+    <div class="modal-backdrop" @onclick="CloseCongrats"></div>
+    <div class="congrats-modal card">
+        <h4>Спасибо за покупку!</h4>
+        <p>Ваш заказ № <strong>@(OrderPlacedId?.ToString() ?? "-")</strong> успешно создан.</p>
+        <div class="congrats-actions">
+            <button class="btn btn-primary" @onclick="FinishCongrats">Хорошо</button>
+        </div>
+    </div>
+}
+
+<style>
+    /* минимальные стили для строчного отображения товаров и колонки реквизитов */
+    .checkout-container {
+        display: flex;
+        gap: 16px;
+        align-items: flex-start;
+    }
+
+    .cart-column {
+        flex: 1 1 60%;
+        min-width: 280px;
+    }
+
+    .checkout-column {
+        width: 320px;
+        flex: 0 0 320px;
+    }
+
+    .cart-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+        .cart-table th, .cart-table td {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            vertical-align: middle;
+        }
+
+    .col-image, .image-cell {
+        width: 80px;
+        text-align: center;
+    }
+
+        .image-cell img {
+            width: 64px;
+            height: 64px;
+            object-fit: cover;
+            border-radius: 6px;
+        }
+
+    .name-cell .product-name {
+        font-weight: 600;
+    }
+
+    .qty-input {
+        width: 72px;
+        padding: 6px;
+        border-radius: 6px;
+        border: 1px solid #ddd;
+        text-align: center;
+    }
+
+    .summary-card {
+        padding: 12px;
+        margin-bottom: 12px;
+    }
+
+    .summary-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 6px 0;
+    }
+
+        .summary-row.total {
+            font-weight: 700;
+            border-top: 1px dashed #e9e9e9;
+            padding-top: 10px;
+            margin-top: 8px;
+        }
+
+    .congrats-modal {
+        position: fixed;
+        left: 50%;
+        top: 40%;
+        transform: translate(-50%,-40%);
+        z-index: 60;
+        padding: 18px;
+        width: 320px;
+        text-align: center;
+    }
+
+    .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.4);
+        z-index: 50;
+    }
+    @@media (max-width:900px) {
+        .checkout-container
+
+    {
+        flex-direction: column;
+    }
+
+    .checkout-column {
+        width: 100%;
+    }
+
+    }
+</style>
+
+@code {
+    private OdezdaShopServerApp.Core.Entities.Carts.Cart? _cart;
+    private CheckoutDto CheckoutModel = new();
+    private bool ShowCongrats;
+    private Guid? OrderPlacedId;
+
+    // cache для изображений и дополнительных данных по товарам
+    private readonly Dictionary<Guid, ProductLookup?> _productLookup = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cart = CartService.GetCart();
+        CartService.OnChange += CartChanged;
+        await EnsureProductLookupsAsync();
+    }
+
+    private async Task EnsureProductLookupsAsync()
+    {
+        if (_cart == null) return;
+        foreach (var it in _cart.Items)
+        {
+            if (!_productLookup.ContainsKey(it.ProductId))
+            {
+                try
+                {
+                    var prod = await ProductService.GetAsync(it.ProductId);
+                    _productLookup[it.ProductId] = prod == null ? null : new ProductLookup { ImagePath = prod.ImagePath };
+                }
+                catch
+                {
+                    _productLookup[it.ProductId] = null;
+                }
+            }
+        }
+    }
+
+    private ProductLookup? GetViewForItem(Guid productId)
+    {
+        _productLookup.TryGetValue(productId, out var v);
+        return v;
+    }
+
+    private void CartChanged() => InvokeAsync(async () =>
+    {
+        _cart = CartService.GetCart();
+        // Обновим lookup для новых товаров
+        await EnsureProductLookupsAsync();
+        StateHasChanged();
+    });
+
+    private void OnQuantityChanged(Guid productId, ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var qty) || qty < 1) qty = 1;
+        CartService.UpdateQuantity(productId, qty);
+        _cart = CartService.GetCart();
+    }
+
+    private void Remove(Guid productId)
+    {
+        CartService.RemoveFromCart(productId);
+        _cart = CartService.GetCart();
+    }
+
+    private void ClearCart()
+    {
+        CartService.ClearCart();
+        _cart = CartService.GetCart();
+    }
+
+    private void ContinueShopping() => Nav.NavigateTo("/");
+
+    private void GoToShop() => Nav.NavigateTo("/");
+
+    private async Task Submit()
+    {
+        if (_cart == null || !_cart.Items.Any()) return;
+
+        try
+        {
+            var auth = await AuthState.GetAuthenticationStateAsync();
+            var user = auth.User;
+            string? userId = user?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            var items = _cart.Items.Select(i => (i.ProductId, i.Quantity)).ToArray();
+            var order = await OrderService.PlaceOrderAsync(items, userId, CheckoutModel.ShippingAddress, CheckoutModel.Email);
+
+            // очистим корзину и обновим UI
+            CartService.ClearCart();
+            _cart = CartService.GetCart();
+            _productLookup.Clear();
+
+            // покажем модальное поздравление
+            OrderPlacedId = order?.Id;
+            ShowCongrats = true;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(ex);
+            await JS.InvokeVoidAsync("alert", "Ошибка при оформлении заказа: " + ex.Message);
+        }
+    }
+
+    private void CloseCongrats()
+    {
+        ShowCongrats = false;
+    }
+
+    private void FinishCongrats()
+    {
+        ShowCongrats = false;
+        Nav.NavigateTo("/"); // или куда нужно
+    }
+
+    public void Dispose()
+    {
+        CartService.OnChange -= CartChanged;
+    }
+
+    private class ProductLookup
+    {
+        public string? ImagePath { get; init; }
+    }
+
+    public class CheckoutDto
+    {
+        public string? Recipient { get; set; }
+        public string? ShippingAddress { get; set; }
+        public string? Email { get; set; }
+        public string? Phone { get; set; }
+    }
+}

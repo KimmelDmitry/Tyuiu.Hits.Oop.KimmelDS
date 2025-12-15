@@ -1,0 +1,146 @@
+﻿
+@rendermode InteractiveServer
+@page "/admin/products/create"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Roles = Roles.Admin)]
+@inject IProductService ProductService
+@inject ICategoryRepository CategoryRepo
+@inject NavigationManager Nav
+
+
+<h3>Создать товар</h3>
+
+<style>
+	.product-form {
+		max-width: 520px;
+		padding: 1.25rem;
+		border-radius: 10px;
+		background: #ffffff;
+		box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+	}
+
+	.form-group {
+		margin-bottom: 0.9rem;
+	}
+
+		.form-group label {
+			display: block;
+			font-size: 0.85rem;
+			margin-bottom: 0.25rem;
+			color: #555;
+		}
+
+	.form-row {
+		display: flex;
+		gap: 0.75rem;
+	}
+
+		.form-row .form-group {
+			flex: 1;
+		}
+
+	.textarea {
+		min-height: 90px;
+		resize: vertical;
+	}
+
+	.file-input {
+		padding: 0.35rem;
+	}
+
+	.actions {
+		margin-top: 1rem;
+		text-align: right;
+	}
+
+	@@media (max-width: 576px) {
+		.form-row
+
+	{
+		flex-direction: column;
+	}
+
+	}
+</style>
+
+
+
+<EditForm Model="Model" OnValidSubmit="Submit" class="product-form">
+	<DataAnnotationsValidator />
+
+	<div class="form-group">
+		<label>Название</label>
+		<InputText class="form-control" @bind-Value="Model.Name" placeholder="Название товара" />
+	</div>
+
+	<div class="form-group">
+		<label>Описание</label>
+		<InputTextArea class="form-control textarea" @bind-Value="Model.Description" placeholder="Краткое описание" />
+	</div>
+
+	<div class="form-row">
+		<div class="form-group">
+			<label>Цена</label>
+			<InputNumber class="form-control" @bind-Value="Model.Price" />
+		</div>
+
+		<div class="form-group">
+			<label>Количество</label>
+			<InputNumber class="form-control" @bind-Value="Model.Stock" />
+		</div>
+	</div>
+
+	<div class="form-group">
+		<label>Категория</label>
+		<select class="form-control" @bind="Model.CategoryId">
+			<option value="">-- Выберите категорию --</option>
+			@foreach (var c in Categories)
+			{
+				<option value="@c.Id">@c.Name</option>
+			}
+		</select>
+	</div>
+
+	<div class="form-group">
+		<label>Изображение</label>
+		<InputFile class="form-control file-input" OnChange="OnFileChange" />
+	</div>
+
+	<div class="actions">
+		<button class="btn btn-primary" type="submit">Создать товар</button>
+	</div>
+</EditForm>
+
+
+
+@code {
+	private CreateModel Model = new();
+
+	private IReadOnlyList<OdezdaShopServerApp.Core.Entities.Category> Categories 
+		= Array.Empty<OdezdaShopServerApp.Core.Entities.Category>();
+
+	private IBrowserFile? UploadedFile;
+
+
+	protected override async Task OnInitializedAsync() => Categories = await CategoryRepo.ListAsync();
+
+
+	private void OnFileChange(InputFileChangeEventArgs e) => UploadedFile = e.File;
+
+
+	private async Task Submit()
+	{
+		byte[]? bytes = null;
+		if (UploadedFile != null)
+		{
+			using var ms = new MemoryStream();
+			await UploadedFile.OpenReadStream(5_000_000).CopyToAsync(ms);
+			bytes = ms.ToArray();
+		}
+
+		var product = await ProductService.CreateAsync(Model.Name, Model.Price, Model.CategoryId, Model.Stock, Model.Description, UploadedFile?.Name, bytes);
+		Nav.NavigateTo("/admin/products");
+	}
+
+	public class CreateModel { public string Name { get; set; } = ""; public string? Description { get; set; } public decimal Price { get; set; } public int Stock { get; set; } public Guid CategoryId { get; set; } }
+}

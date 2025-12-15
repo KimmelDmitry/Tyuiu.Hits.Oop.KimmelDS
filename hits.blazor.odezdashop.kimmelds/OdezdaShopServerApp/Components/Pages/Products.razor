@@ -1,0 +1,45 @@
+﻿@rendermode InteractiveServer
+@page "/products"
+@using OdezdaShopServerApp.Components
+
+@inject IProductService ProductService
+@inject NavigationManager Nav
+
+
+<h3>Каталог</h3>
+
+
+<input class="form-control mb-3" placeholder="Поиск" @bind="SearchQuery" />
+
+
+@if (Productes == null)
+{
+	<p>Загрузка...</p>
+}
+else if (!Productes.Any())
+{
+	<p>Товаров нет.</p>
+}
+else
+{
+	<div class="row">
+		@foreach (var p in Productes)
+		{
+			<div class="col-md-4 mb-3">
+				<ProductCard Product="p" />
+			</div>
+		}
+	</div>
+}
+
+
+@code {
+	private List<Product>? Productes;
+	private string? SearchQuery;
+
+
+	protected override async Task OnInitializedAsync()
+	{
+		Productes = await ProductService.ListActiveAsync();
+	}
+}
